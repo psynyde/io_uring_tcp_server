@@ -1,6 +1,7 @@
 cc := "clang"
-cflags := "-Wall -Wextra -pedantic -g -O1 -std=gnu99"
-# cflags := "-Wall -Wextra -pedantic \
+cflags := "-Wall -Wextra -pedantic -g -O2 -fno-omit-frame-pointer -std=gnu99"
+
+# cflags := "-Wall -Wextra -pedantic --std=gnu99 \
 #     -Wformat=2 \
 #     -Wformat-security \
 #     -Wnull-dereference \
@@ -35,8 +36,8 @@ cflags := "-Wall -Wextra -pedantic -g -O1 -std=gnu99"
 #     -O2 \
 #     -pipe"
 # libflags := "$(pkg-config --cflags --libs gtk4 gtk4-layer-shell-0)"
-libflags := "$(pkg-config --cflags --libs liburing) -lc"
 
+libflags := "$(pkg-config --cflags --libs liburing) -lc"
 src_dir := "src"
 build_dir := "build"
 
@@ -44,12 +45,11 @@ default:
     @ just build
 
 build:
-    @ mkdir -p {{build_dir}}
-    @ {{cc}} {{cflags}} `find {{src_dir}} -name '*.c'` -o {{build_dir}}/server {{libflags}}
+    @ mkdir -p {{ build_dir }}
+    @ {{ cc }} {{ cflags }} `find {{ src_dir }} -name '*.c'` -o {{ build_dir }}/server {{ libflags }}
 
 run: build
-    ./{{build_dir}}/server
+    ./{{ build_dir }}/server
 
 clean:
-    rm -rf {{build_dir}}
-
+    rm -rf {{ build_dir }}

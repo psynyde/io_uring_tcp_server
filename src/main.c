@@ -1,7 +1,9 @@
-// #define _GNU_SOURCE
 #include "netdb.h"
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <signal.h>
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,9 +19,10 @@
 #define QUEUE_DEPTH 256
 #define BUF_SIZE 2048
 
-#define ANSI_WHITE_BG_BLACK_FG "\033[47;30m"
 #define ANSI_RED_BG_BLACK_FG "\033[41;30m"
 #define ANSI_GREEN_BG_BLACK_FG "\033[42;30m"
+#define ANSI_YELLOW_BG_BLACK_FG "\033[43;5;242;30m"
+#define ANSI_GRAY_BG_BLACK_FG "\033[48;5;242;30m"
 #define ANSI_RESET "\033[0m"
 
 enum op_type { OP_ACCEPT = 1, OP_READ = 2, OP_WRITE = 3 };
@@ -33,6 +36,46 @@ struct io_data {
   socklen_t addrlen;
 };
 
+void log_info(const char *fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+
+  fprintf(stdout, ANSI_GRAY_BG_BLACK_FG " INF " ANSI_RESET " ");
+  vfprintf(stdout, fmt, args);
+  fprintf(stdout, "\n");
+
+  va_end(args);
+}
+
+void log_warn(const char *fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+
+  fprintf(stderr, ANSI_YELLOW_BG_BLACK_FG " WRN " ANSI_RESET " ");
+  vfprintf(stderr, fmt, args);
+  fprintf(stderr, "\n");
+
+  va_end(args);
+}
+
+void log_err(const char *fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+
+  fprintf(stderr, ANSI_RED_BG_BLACK_FG " ERR " ANSI_RESET " ");
+  vfprintf(stderr, fmt, args);
+  fprintf(stderr, "\n");
+
+  va_end(args);
+}
+
+int loop_state = 0;
+void sigint_handler(int s) {
+  (void)s;
+  log_info("Exiting with sigint_handler");
+  loop_state = 1;
+}
+
 int set_nonblocking(int fd) {
   int flags = fcntl(fd, F_GETFL, 0);
   if (flags == -1)
@@ -40,10 +83,11 @@ int set_nonblocking(int fd) {
   return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
-int submit_accept(struct io_uring *ring, int listen_fd) {
+int submit_accept(struct io_uring *ring, int server_fd) {
   struct io_data *d = calloc(1, sizeof(*d));
   if (!d)
     return -1;
+
   d->type = OP_ACCEPT;
   d->addrlen = sizeof(d->addr);
 
@@ -53,10 +97,15 @@ int submit_accept(struct io_uring *ring, int listen_fd) {
     return -1;
   }
 
-  io_uring_prep_accept(sqe, listen_fd, (struct sockaddr *)&d->addr, &d->addrlen,
+  io_uring_prep_accept(sqe, server_fd, (struct sockaddr *)&d->addr, &d->addrlen,
                        0);
   io_uring_sqe_set_data(sqe, d);
-  return io_uring_submit(ring);
+  int ret = io_uring_submit(ring);
+  if (ret < 0) {
+    free(d);
+    log_warn("submit failed inside accept");
+  }
+  return ret;
 }
 
 int submit_recv(struct io_uring *ring, int client_fd) {
@@ -66,7 +115,7 @@ int submit_recv(struct io_uring *ring, int client_fd) {
   d->type = OP_READ;
   d->fd = client_fd;
   d->buflen = BUF_SIZE;
-  d->buf = malloc(d->buflen + 1);
+  d->buf = malloc(d->buflen); // NOTE: extra 1 byte for the \0
   if (!d->buf) {
     free(d);
     return -1;
@@ -74,16 +123,28 @@ int submit_recv(struct io_uring *ring, int client_fd) {
   memset(d->buf, 0, d->buflen);
 
   struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
+  if (!sqe) {
+    free(d->buf);
+    free(d);
+    return -1;
+  }
   io_uring_prep_recv(sqe, client_fd, d->buf, d->buflen, 0);
   io_uring_sqe_set_data(sqe, d);
-  return io_uring_submit(ring);
+  int ret = io_uring_submit(ring);
+  if (ret < 0) {
+    free(d->buf);
+    free(d);
+    log_warn("submit failed inside recv");
+  }
+  return ret;
 }
 
 int submit_send(struct io_uring *ring, int client_fd, const char *msg,
                 size_t len) {
   struct io_data *d = calloc(1, sizeof(*d));
-  if (!d)
+  if (!d) {
     return -1;
+  }
   d->type = OP_WRITE;
   d->fd = client_fd;
   d->buflen = len;
@@ -96,19 +157,46 @@ int submit_send(struct io_uring *ring, int client_fd, const char *msg,
   d->buf[len] = '\0';
 
   struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
+  if (!sqe) {
+    free(d->buf);
+    free(d);
+    return -1;
+  }
+
   io_uring_prep_send(sqe, client_fd, d->buf, len, 0);
   io_uring_sqe_set_data(sqe, d);
-  return io_uring_submit(ring);
+  int ret = io_uring_submit(ring);
+  if (ret < 0) {
+    free(d->buf);
+    free(d);
+    log_warn("submit failed inside send");
+  }
+  return ret;
+}
+
+void *get_in_addr(struct sockaddr *sa) {
+  if (sa->sa_family == AF_INET) {
+    return &(((struct sockaddr_in *)sa)->sin_addr);
+  } else if (sa->sa_family == AF_INET6) {
+    return &(((struct sockaddr_in6 *)sa)->sin6_addr);
+  } else {
+    log_err("Error while get_in_addr");
+    exit(1);
+  }
 }
 
 int main(void) {
+  if (signal(SIGINT, sigint_handler) == SIG_ERR) {
+    perror("Unable to set SIGINT handler");
+    return EXIT_FAILURE;
+  }
   struct io_uring ring;
   if (io_uring_queue_init(QUEUE_DEPTH, &ring, 0) < 0) {
     perror("io_uring_queue_init");
     return 1;
   }
 
-  int server_fd;
+  int server_fd = -1;
   struct addrinfo hints, *p, *servinfo;
 
   memset(&hints, 0, sizeof(hints));
@@ -119,7 +207,7 @@ int main(void) {
   int rv, yes = 1;
   rv = getaddrinfo(NULL, PORT, &hints, &servinfo);
   if (rv != 0) {
-    fprintf(stderr, "getaddrinfo err: %s\n", gai_strerror(rv));
+    log_err("Error while get_in_addr %s", gai_strerror(rv));
     return 1;
   }
 
@@ -146,8 +234,7 @@ int main(void) {
   freeaddrinfo(servinfo);
 
   if (p == NULL) {
-    fprintf(stderr,
-            "HOW TF THIS ERR EVEN MANAGE TO OCCUR AFTER ALL THOSE CHECKS");
+    log_err("HOW TF THIS EVER MANAGE TO PASS ALL OTHER CHECKS");
     exit(1);
   }
 
@@ -166,41 +253,49 @@ int main(void) {
 
   // submit first accept
   if (submit_accept(&ring, server_fd) < 0) {
-    fprintf(stderr, "failed to submit initial accept\n");
+    log_err("failed to submit initial accpet");
     return 1;
   }
 
-  // main completion loop
-  while (1) {
+  char ip_holder[INET6_ADDRSTRLEN];
+  while (!loop_state) {
     struct io_uring_cqe *cqe;
     int ret = io_uring_wait_cqe(&ring, &cqe);
-    if (ret < 0) {
-      fprintf(stderr, "io_uring_wait_cqe: %s\n", strerror(-ret));
-      break;
+    // NOTE: ret value is -errno instead of just errno so add -
+    if (ret == -EINTR) {
+      log_warn("EINIT encountred: %s", strerror(-ret));
+      continue;
+    } else if (ret < 0) {
+      log_err("Unhandled io_uring_wait_cqe err: %s", strerror(-ret));
+      exit(1);
     }
     struct io_data *d = io_uring_cqe_get_data(cqe);
     int res = cqe->res;
 
     if (!d) {
-      // shouldn't happen
       io_uring_cqe_seen(&ring, cqe);
       continue;
     }
 
     if (d->type == OP_ACCEPT) {
       if (res < 0) {
-        fprintf(stderr, "accept failed: %s\n", strerror(-res));
+        log_warn("Accecpt failed: %s", strerror(-res));
         free(d);
-        // re instantiate accept
-        submit_accept(&ring, server_fd);
+        if (submit_accept(&ring, server_fd) < 0) {
+          log_err("failed to submit_accept inside OP_ACCEPT");
+          continue;
+        }
       } else {
         int client_fd = res;
-        printf(ANSI_WHITE_BG_BLACK_FG " NEW " ANSI_RESET
-                                      " accepted client fd=%d\n",
-               client_fd);
+        inet_ntop(d->addr.ss_family, get_in_addr((struct sockaddr *)&d->addr),
+                  ip_holder, sizeof(ip_holder));
+        log_info("accepted client fd=%d, addr=%s\n", client_fd, ip_holder);
         set_nonblocking(client_fd);
 
-        submit_accept(&ring, server_fd);
+        if (submit_accept(&ring, server_fd) < 0) {
+          log_err("failed to submit_accept inside OP_ACCEPT");
+          continue;
+        }
 
         // start reading from client
         if (submit_recv(&ring, client_fd) < 0) {
@@ -209,41 +304,48 @@ int main(void) {
         free(d); // accept's io_data no longer needed
       }
     } else if (d->type == OP_READ) {
-      if (res <= 0) {
-        // 0 -> client closed, <0 -> error
-        if (res == 0)
-          printf(ANSI_RED_BG_BLACK_FG " CLS " ANSI_RESET
-                                      " client fd=%d closed connection\n",
-                 d->fd);
-        else
-          fprintf(stderr, "recv error fd=%d: %s\n", d->fd, strerror(-res));
+      if (res <= 0) { // 0 -> client closed, <0 -> error
+        if (res == 0) {
+          log_info("client fd=%d closed connection\n", d->fd);
+        } else if (res == -ECONNRESET) {
+          log_info("recv error fd=%d : %s", d->fd, strerror(-res));
+        } else {
+          log_warn("recv error fd=%d : %s (%d)", d->fd, strerror(-res), res);
+        }
         close(d->fd);
         free(d->buf);
         free(d);
+
       } else {
         // got data
         size_t n = (size_t)res;
 
-        if (d->buf[n - 1] == '\n') {
-          d->buf[n - 1] = '\0';
-        } else {
-          d->buf[n] = '\0';
-        }
+        // NOTE: n-1 cause array starts at 0 you dummy;
+        // n is just total bytes read
+        d->buf[n - 1] = '\0';
+        // final byte always null terminated. cause the
+        // client sends with \n at end not \0. \n reason terminal enter to send
+
         printf("client(%d) -> %s\n", d->fd, d->buf);
 
         // reply (Hello kitty)
         const char *msg = "Got your shit\n";
-        if (submit_send(&ring, d->fd, msg, strlen(msg)) < 0) {
+        if (submit_send(&ring, d->fd, msg, strlen(msg) + 1) < 0) {
           close(d->fd);
+          free(d->buf);
+          free(d);
         }
-        // we free this read buffer; after the write completes we'll re-issue a
-        // recv
+
         free(d->buf);
         free(d);
       }
     } else if (d->type == OP_WRITE) {
       if (res < 0) {
-        fprintf(stderr, "send error fd=%d: %s\n", d->fd, strerror(-res));
+        if (res == -EPIPE) {
+          log_info("send error fd=%d: %s", d->fd, strerror(-res));
+        } else {
+          log_warn("send error fd=%d: %s (%d)", d->fd, strerror(-res), res);
+        }
         close(d->fd);
         free(d->buf);
         free(d);
@@ -252,12 +354,13 @@ int main(void) {
         // now re-issue a recv to keep the connection alive
         if (submit_recv(&ring, d->fd) < 0) {
           close(d->fd);
+          free(d->buf);
+          free(d);
         }
         free(d->buf);
         free(d);
       }
     }
-
     io_uring_cqe_seen(&ring, cqe);
   }
 

@@ -39,6 +39,27 @@
             llvmPackages_latest.libcxx
             llvmPackages_latest.clang
             llvmPackages_latest.clang-tools
+            gprof2dot
+            (graphviz.override {
+              withXorg = false;
+            })
+            flamegraph
+
+            # perf-tree
+            (writeShellScriptBin "perf-tree" ''
+              perf script --input=./test/perf.data | gprof2dot -f perf | dot -Gdpi=150 -Tpng -o ./test/perf_tree.png
+              if [[ "$1" == "view" ]]; then
+                swayimg -f ./test/perf_tree.png
+              fi
+            '')
+
+            # perf-flame
+            (writeShellScriptBin "perf-flame" ''
+              perf script --input=./test/perf.data | stackcollapse-perf.pl | flamegraph.pl > ./test/perf_flame.svg
+              if [[ "$1" == "view" ]]; then
+                zen ./test/perf_flame.svg
+              fi
+            '')
           ];
 
           shellHook = ''
@@ -54,6 +75,7 @@
           programs = {
             nixfmt.enable = true;
             clang-format.enable = true;
+            just.enable = true;
           };
         };
       }

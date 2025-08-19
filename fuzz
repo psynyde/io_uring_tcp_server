@@ -1,4 +1,39 @@
-for i in {1..1000}; do
-    echo "Hello kitty :D 😠❤️‍🔥" | radamsa | timeout 1 nc localhost 6969
-    sleep 0.1
+#!/usr/bin/env bash
+
+if [ -z "$1" ]; then
+    echo "Usage: $0 <num_clients>"
+    exit 1
+fi
+
+NUM_CLIENTS=$1
+
+# Kill everything when we exit
+cleanup() {
+    echo "Shutting down all clients..."
+    kill 0
+}
+trap cleanup EXIT
+
+client() {
+    while true; do
+        duration=$((RANDOM % 9 + 2))
+        end=$((SECONDS + duration))
+        num_msgs=$((RANDOM % 16 + 5))
+
+        for ((i=0; i<num_msgs; i++)); do
+            echo "Hello kitty :D 😠❤️‍🔥" | radamsa | timeout 1 nc localhost 6969 || break
+            sleep 0.$((RANDOM % 5))
+        done
+
+        while [ $SECONDS -lt $end ]; do
+            sleep 0.5
+        done
+    done
+}
+
+# Spawn clients
+for ((i=0; i<NUM_CLIENTS; i++)); do
+    client &
 done
+
+wait
