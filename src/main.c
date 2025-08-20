@@ -259,7 +259,7 @@ int main(void) {
 
   char ip_holder[INET6_ADDRSTRLEN];
   while (!loop_state) {
-    struct io_uring_cqe *cqe;
+    struct io_uring_cqe *cqe; // NOTE: creating cqe with each iteration
     int ret = io_uring_wait_cqe(&ring, &cqe);
     // NOTE: ret value is -errno instead of just errno so add -
     if (ret == -EINTR) {

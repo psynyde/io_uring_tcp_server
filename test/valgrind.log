@@ -1,25 +1,25 @@
-==741046== Memcheck, a memory error detector
-==741046== Copyright (C) 2002-2024, and GNU GPL'd, by Julian Seward et al.
-==741046== Using Valgrind-3.25.1 and LibVEX; rerun with -h for copyright info
-==741046== Command: ./build/server
-==741046== Parent PID: 416980
-==741046== 
-==741046== 
-==741046== HEAP SUMMARY:
-==741046==     in use at exit: 160 bytes in 1 blocks
-==741046==   total heap usage: 813,742 allocs, 813,741 frees, 546,022,272 bytes allocated
-==741046== 
-==741046== 160 bytes in 1 blocks are definitely lost in loss record 1 of 1
-==741046==    at 0x48542B1: calloc (in /nix/store/nv0b7ljjb1kij1gp0g861dz49zfjhqig-valgrind-3.25.1/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
-==741046==    by 0x400170E: submit_accept (src/main.c:87)
-==741046==    by 0x4001EDD: main (src/main.c:295)
-==741046== 
-==741046== LEAK SUMMARY:
-==741046==    definitely lost: 160 bytes in 1 blocks
-==741046==    indirectly lost: 0 bytes in 0 blocks
-==741046==      possibly lost: 0 bytes in 0 blocks
-==741046==    still reachable: 0 bytes in 0 blocks
-==741046==         suppressed: 0 bytes in 0 blocks
-==741046== 
-==741046== For lists of detected and suppressed errors, rerun with: -s
-==741046== ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)
+==19406== Memcheck, a memory error detector
+==19406== Copyright (C) 2002-2024, and GNU GPL'd, by Julian Seward et al.
+==19406== Using Valgrind-3.25.1 and LibVEX; rerun with -h for copyright info
+==19406== Command: ./test
+==19406== Parent PID: 13770
+==19406== 
+==19406== 
+==19406== HEAP SUMMARY:
+==19406==     in use at exit: 16 bytes in 1 blocks
+==19406==   total heap usage: 112 allocs, 111 frees, 94,430 bytes allocated
+==19406== 
+==19406== 16 bytes in 1 blocks are definitely lost in loss record 1 of 1
+==19406==    at 0x484D810: malloc (in /nix/store/nv0b7ljjb1kij1gp0g861dz49zfjhqig-valgrind-3.25.1/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==19406==    by 0x4003940: server_loop (in /home/psynyde/Projects/uring_server/test/test)
+==19406==    by 0x4003B23: main (in /home/psynyde/Projects/uring_server/test/test)
+==19406== 
+==19406== LEAK SUMMARY:
+==19406==    definitely lost: 16 bytes in 1 blocks
+==19406==    indirectly lost: 0 bytes in 0 blocks
+==19406==      possibly lost: 0 bytes in 0 blocks
+==19406==    still reachable: 0 bytes in 0 blocks
+==19406==         suppressed: 0 bytes in 0 blocks
+==19406== 
+==19406== For lists of detected and suppressed errors, rerun with: -s
+==19406== ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)
