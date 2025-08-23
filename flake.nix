@@ -23,7 +23,7 @@
           name = project;
           LSP_SERVER = "clangd";
           packages = with pkgs; [
-            liburing
+            pkgsStatic.buildPackages.liburing
 
             pkg-config
             just
@@ -39,6 +39,7 @@
             llvmPackages_latest.libcxx
             llvmPackages_latest.clang
             llvmPackages_latest.clang-tools
+
             gprof2dot
             (graphviz.override {
               withXorg = false;
@@ -59,6 +60,68 @@
               if [[ "$1" == "view" ]]; then
                 zen ./test/perf_flame.svg
               fi
+            '')
+
+            (writeShellScriptBin "grind" ''
+              TOOL="$1"
+              shift || true   # shift args so you can pass extra args to your server
+              case "$TOOL" in
+                memcheck)
+                  valgrind \
+                    --log-file=./test/valgrind-memcheck.log \
+                    --tool=memcheck \
+                    --leak-check=full \
+                    --show-leak-kinds=all \
+                    --track-origins=yes \
+                    --errors-for-leak-kinds=all \
+                    ./build/server "$@"
+                  ;;
+
+                massif)
+                  valgrind \
+                    --massif-out-file=./test/valgrind-massif.log \
+                    --tool=massif \
+                    --time-unit=ms \
+                    --detailed-freq=10 \
+                    --max-snapshots=200 \
+                    ./build/server "$@"
+                  echo "Massif output: ms_print massif.out.*"
+                  ;;
+
+                callgrind)
+                  valgrind \
+                    --callgrind-out-file=./test/valgrind-callgrind.log \
+                    --tool=callgrind \
+                    --dump-instr=yes \
+                    --collect-jumps=yes \
+                    ./build/server "$@"
+                  echo "Callgrind output: callgrind_annotate callgrind.out.*"
+                  ;;
+
+                cachegrind)
+                  valgrind \
+                    --cachegrind-out-file=./test/valgrind-cachegrind.log \
+                    --tool=cachegrind \
+                    --branch-sim=yes \
+                    ./build/server "$@"
+                  echo "Cachegrind output: cg_annotate cachegrind.out.*"
+                  ;;
+
+                helgrind)
+                  valgrind \
+                    --log-file=./test/valgrind-helgrind.log \
+                    --tool=helgrind \
+                    --history-level=full \
+                    --track-lockorders=yes \
+                    --free-is-write=yes \
+                    ./build/server "$@"
+                  ;;
+
+                *)
+                  echo "Usage: grind {memcheck|massif|callgrind|cachegrind|helgrind} [server-args...]"
+                  exit 1
+                  ;;
+              esac
             '')
           ];
 

@@ -1,7 +1,10 @@
 cc := "clang"
+
 cflags := "-Wall -Wextra -pedantic -g -O0 -fno-omit-frame-pointer -std=gnu99"
 
 # cflags := "-Wall -Wextra -pedantic --std=gnu99 \
+#     -fsanitize=address \
+#     -fsanitize=undefined \
 #     -Wformat=2 \
 #     -Wformat-security \
 #     -Wnull-dereference \
@@ -33,9 +36,8 @@ cflags := "-Wall -Wextra -pedantic -g -O0 -fno-omit-frame-pointer -std=gnu99"
 #     -fno-delete-null-pointer-checks \
 #     -fno-strict-overflow \
 #     -fno-omit-frame-pointer \
-#     -O2 \
+#     -O3 \
 #     -pipe"
-# libflags := "$(pkg-config --cflags --libs gtk4 gtk4-layer-shell-0)"
 
 libflags := "$(pkg-config --cflags --libs liburing) -lc"
 src_dir := "src"
