@@ -23,12 +23,13 @@
           name = project;
           LSP_SERVER = "clangd";
           packages = with pkgs; [
-            pkgsStatic.buildPackages.liburing
-
             pkg-config
             just
             bear
             radamsa
+
+            liburing
+            brotli
 
             gdb
             valgrind
@@ -56,7 +57,7 @@
 
             # perf-flame
             (writeShellScriptBin "perf-flame" ''
-              perf script --input=./test/perf.data | stackcollapse-perf.pl | flamegraph.pl > ./test/perf_flame.svg
+              perf script --input=./test/perf.data | stackcollapse-perf.pl | flamegraph.pl --colors hot > ./test/perf_flame.svg
               if [[ "$1" == "view" ]]; then
                 zen ./test/perf_flame.svg
               fi

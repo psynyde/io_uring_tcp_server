@@ -76,6 +76,9 @@ void log_err(const char *fmt, ...) {
 }
 
 int LOOP_STATE = 1;
+struct io_data *pending_accpet_data = NULL;
+// HACK: extemely hacky solution to the 126byte lost data
+
 void sigint_handler(int s) {
   (void)s;
   log_info("Exiting with sigint_handler");
@@ -96,9 +99,11 @@ int submit_accept(struct io_uring *ring, int server_fd) {
 
   d->type = OP_ACCEPT;
   d->addrlen = sizeof(d->addr);
+  pending_accpet_data = d;
 
   struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
   if (!sqe) {
+    pending_accpet_data = NULL;
     free(d);
     log_err("Err init sqe inside submit_accept");
     return -1;
@@ -109,6 +114,7 @@ int submit_accept(struct io_uring *ring, int server_fd) {
   io_uring_sqe_set_data(sqe, d);
   int ret = io_uring_submit(ring);
   if (ret < 0) {
+    pending_accpet_data = NULL;
     free(d);
     log_warn("submit failed inside accept");
   }
@@ -257,6 +263,10 @@ int get_server_fd(void) {
 
 int handle_accept(struct io_data *d, int res, int server_fd, char *ip_holder,
                   struct io_uring *ring) {
+  if (d == pending_accpet_data) {
+    pending_accpet_data = NULL;
+  }
+
   if (res < 0) {
     log_warn("Accecpt failed: %s", strerror(-res));
     free(d);
@@ -403,6 +413,15 @@ int main(void) {
       log_warn("switch err on d->type");
     }
     io_uring_cqe_seen(&ring, cqe);
+  }
+  // HACK: extemely hacky shit. god forbid me
+  if (pending_accpet_data) {
+    log_info("Freeing final pending accept operation");
+    if (pending_accpet_data->buf) {
+      free(pending_accpet_data->buf);
+    }
+    free(pending_accpet_data);
+    pending_accpet_data = NULL;
   }
 
   io_uring_queue_exit(&ring);
