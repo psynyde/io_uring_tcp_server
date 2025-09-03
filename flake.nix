@@ -27,6 +27,8 @@
             just
             bear
             radamsa
+            socat
+            tcpkali
 
             liburing
             brotli

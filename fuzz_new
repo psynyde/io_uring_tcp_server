@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Combined connection and message rate stress test - CORRECTED
+
+echo "Starting combined load stress test..."
+
+# Check if server address is provided
+if [ $# -eq 0 ]; then
+    echo "Usage: $0 <host:port>"
+    echo "Example: $0 localhost:8080"
+    exit 1
+fi
+
+SERVER_ADDRESS=$1
+
+# Format: "connections message_rate duration description"
+test_scenarios=(
+    "100 1000 30s Warm-up"
+    "500 5000 60s Light-load"
+    "1000 10000 60s Medium-load"
+    "2000 20000 90s Heavy-load"
+    "5000 35000 120s Stress-test"
+    "10000 50000 180s Maximum-load"
+)
+
+for scenario in "${test_scenarios[@]}"; do
+    read -r conn rate dur desc <<< "$scenario"
+
+    echo "======================================="
+    echo "Test: $desc"
+    echo "Connections: $conn"
+    echo "Message Rate: $rate msg/s"
+    echo "Duration: $dur"
+    echo "Server: $SERVER_ADDRESS"
+    echo "======================================="
+
+    # Correct tcpkali syntax
+    tcpkali -c $conn \
+            -r $rate \
+            -T $dur \
+            -m "Stress test message\n" \
+            --workers $(nproc) \
+            -v \
+            $SERVER_ADDRESS
+
+    exit_code=$?
+    if [ $exit_code -ne 0 ]; then
+        echo "Test failed with exit code $exit_code"
+        echo "This might indicate server overload or connection limits reached"
+    fi
+
+    echo "Test completed. Cooling down for 15 seconds..."
+    sleep 15
+done
+
+echo "All tests completed!"
