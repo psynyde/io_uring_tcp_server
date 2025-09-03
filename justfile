@@ -1,6 +1,6 @@
 cc := "clang"
 
-cflags := "-Wall -Wextra -pedantic -g -O0 -fno-omit-frame-pointer -std=gnu99"
+cflags := "-Wall -Wextra -pedantic -g -O0 -fno-omit-frame-pointer -std=c99"
 
 # cflags := "-Wall -Wextra -pedantic --std=gnu99 \
 #     -fsanitize=address \
